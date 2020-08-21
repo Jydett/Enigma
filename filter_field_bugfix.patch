@@ -1,0 +1,463 @@
+Index: src/main/java/cuchaz/enigma/gui/panels/PanelDeobf.java
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+--- src/main/java/cuchaz/enigma/gui/panels/PanelDeobf.java	(revision 6a7192e18336e933f77d2e16f8f0e8eb114949e3)
++++ src/main/java/cuchaz/enigma/gui/panels/PanelDeobf.java	(date 1570276638997)
+@@ -14,7 +14,7 @@
+ 	public PanelDeobf(Gui gui) {
+ 		this.gui = gui;
+ 
+-		this.deobfClasses = new ClassSelector(gui, ClassSelector.DEOBF_CLASS_COMPARATOR, true);
++		this.deobfClasses = new ClassSelector(gui, ClassSelector.DEOBF_CLASS_COMPARATOR, true, null);
+ 		this.deobfClasses.setSelectionListener(gui.getController()::navigateTo);
+ 		this.deobfClasses.setRenameSelectionListener(gui::onPanelRename);
+ 
+Index: src/main/java/cuchaz/enigma/gui/ClassSelector.java
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+--- src/main/java/cuchaz/enigma/gui/ClassSelector.java	(revision 6a7192e18336e933f77d2e16f8f0e8eb114949e3)
++++ src/main/java/cuchaz/enigma/gui/ClassSelector.java	(date 1597612054274)
+@@ -17,6 +17,7 @@
+ import com.google.common.collect.Multimap;
+ import cuchaz.enigma.gui.node.ClassSelectorClassNode;
+ import cuchaz.enigma.gui.node.ClassSelectorPackageNode;
++import cuchaz.enigma.gui.panels.TreeFilterDecorator;
+ import cuchaz.enigma.throwables.IllegalNameException;
+ import cuchaz.enigma.translation.Translator;
+ import cuchaz.enigma.translation.representation.entry.ClassEntry;
+@@ -29,12 +30,14 @@
+ import java.awt.event.MouseAdapter;
+ import java.awt.event.MouseEvent;
+ import java.util.*;
++import java.util.function.BiPredicate;
+ 
+ public class ClassSelector extends JTree {
+ 
+ 	public static final Comparator<ClassEntry> DEOBF_CLASS_COMPARATOR = Comparator.comparing(ClassEntry::getFullName);
+ 
+ 	private final GuiController controller;
++	private final JTextField filterField;
+ 
+ 	private DefaultMutableTreeNode rootNodes;
+ 	private ClassSelectionListener selectionListener;
+@@ -42,11 +45,12 @@
+ 	private Comparator<ClassEntry> comparator;
+ 
+ 	private final Map<ClassEntry, ClassEntry> displayedObfToDeobf = new HashMap<>();
++	private boolean isDecorated = false;
+ 
+-	public ClassSelector(Gui gui, Comparator<ClassEntry> comparator, boolean isRenamable) {
++	public ClassSelector(Gui gui, Comparator<ClassEntry> comparator, boolean isRenamable, JTextField filterField) {
+ 		this.comparator = comparator;
+ 		this.controller = gui.getController();
+-
++		this.filterField = filterField;
+ 		// configure the tree control
+ 		setEditable(true);
+ 		setRootVisible(false);
+@@ -60,9 +64,12 @@
+ 				if (selectionListener != null && event.getClickCount() == 2) {
+ 					// get the selected node
+ 					TreePath path = getSelectionPath();
+-					if (path != null && path.getLastPathComponent() instanceof ClassSelectorClassNode) {
+-						ClassSelectorClassNode node = (ClassSelectorClassNode) path.getLastPathComponent();
+-						selectionListener.onSelectClass(node.getObfEntry());
++					Object lastPathComponent = path.getLastPathComponent();
++					if (path != null && lastPathComponent instanceof DefaultMutableTreeNode) {
++						Object userObject = ((DefaultMutableTreeNode) lastPathComponent).getUserObject();
++						if (userObject instanceof ClassEntry) {
++							selectionListener.onSelectClass((ClassEntry) userObject);
++						}
+ 					}
+ 				}
+ 			}
+@@ -224,8 +231,21 @@
+ 
+ 		// finally, update the tree control
+ 		setModel(new DefaultTreeModel(rootNodes));
+-
+ 		restoreExpansionState(this, state);
++		if (! isDecorated && filterField != null) {
++			TreeFilterDecorator.decorate(this, createUserObjectMatcher(), filterField);
++			isDecorated = true;
++		}
++	}
++
++	private BiPredicate<Object, String> createUserObjectMatcher() {
++		return (userObject, textToFilter) -> {
++			if (userObject instanceof ClassEntry) {
++				ClassEntry pp = (ClassEntry) userObject;
++				return pp.getName().equals(textToFilter);
++			}
++			return false;
++		};
+ 	}
+ 
+ 	public ClassEntry getSelectedClass() {
+Index: src/main/java/cuchaz/enigma/Main.java
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+--- src/main/java/cuchaz/enigma/Main.java	(revision 6a7192e18336e933f77d2e16f8f0e8eb114949e3)
++++ src/main/java/cuchaz/enigma/Main.java	(date 1570278020880)
+@@ -15,6 +15,7 @@
+ import cuchaz.enigma.gui.GuiController;
+ import cuchaz.enigma.translation.mapping.serde.MappingFormat;
+ import joptsimple.*;
++import joptsimple.util.PathConverter;
+ 
+ import java.io.BufferedReader;
+ import java.io.IOException;
+@@ -25,6 +26,12 @@
+ public class Main {
+ 
+ 	public static void main(String[] args) throws IOException {
++		if (args.length == 0) {
++			args = new String[]{
++					"-jar",
++					"C:\\Users\\Jydet\\AppData\\Local\\Ankama\\zaap\\wakfu\\lib\\wakfu-client.jar"
++			};
++		}
+ 		OptionParser parser = new OptionParser();
+ 
+ 		OptionSpec<Path> jar = parser.accepts("jar", "Jar file to open at startup")
+Index: src/main/java/cuchaz/enigma/gui/panels/PanelObf.java
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+--- src/main/java/cuchaz/enigma/gui/panels/PanelObf.java	(revision 6a7192e18336e933f77d2e16f8f0e8eb114949e3)
++++ src/main/java/cuchaz/enigma/gui/panels/PanelObf.java	(date 1570276638980)
+@@ -5,13 +5,17 @@
+ import cuchaz.enigma.translation.representation.entry.ClassEntry;
+ 
+ import javax.swing.*;
++import javax.swing.event.DocumentEvent;
++import javax.swing.event.DocumentListener;
+ import java.awt.*;
+ import java.util.Comparator;
++import java.util.function.BiPredicate;
+ 
+ public class PanelObf extends JPanel {
+ 
+ 	public final ClassSelector obfClasses;
+ 	private final Gui gui;
++	private final JTextField filterField;
+ 
+ 	public PanelObf(Gui gui) {
+ 		this.gui = gui;
+@@ -25,12 +29,15 @@
+ 			return aname.compareTo(bname);
+ 		};
+ 
+-		this.obfClasses = new ClassSelector(gui, obfClassComparator, false);
++		filterField = new JTextField(15);
++
++		this.obfClasses = new ClassSelector(gui, obfClassComparator, false, filterField);
+ 		this.obfClasses.setSelectionListener(gui.getController()::navigateTo);
+ 		this.obfClasses.setRenameSelectionListener(gui::onPanelRename);
+ 
+ 		this.setLayout(new BorderLayout());
+ 		this.add(new JLabel("Obfuscated Classes"), BorderLayout.NORTH);
+ 		this.add(new JScrollPane(this.obfClasses), BorderLayout.CENTER);
++		this.add(filterField, BorderLayout.SOUTH);
+ 	}
+ }
+Index: src/test/java/EnigmaWakfu.java
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+--- src/test/java/EnigmaWakfu.java	(date 1578747172498)
++++ src/test/java/EnigmaWakfu.java	(date 1578747172498)
+@@ -0,0 +1,15 @@
++public class EnigmaWakfu {
++    public static void main(String[] args) {
++        try {
++            Runtime rt = Runtime.getRuntime();
++            Process exec = rt.exec(new String[]{
++                    "java",
++                    "-jar",
++                    "E:\\Java\\Enigma\\build\\libs\\enigma-0.14.2.jar"
++            });
++//            exec.waitFor();
++        } catch (Exception e) {
++            e.printStackTrace();
++        }
++    }
++}
+Index: src/main/java/cuchaz/enigma/gui/util/JTreeUtil.java
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+--- src/main/java/cuchaz/enigma/gui/util/JTreeUtil.java	(date 1570275568103)
++++ src/main/java/cuchaz/enigma/gui/util/JTreeUtil.java	(date 1570275568103)
+@@ -0,0 +1,56 @@
++package cuchaz.enigma.gui.util;
++
++import javax.swing.*;
++import javax.swing.tree.DefaultMutableTreeNode;
++import javax.swing.tree.TreePath;
++import java.util.Collections;
++import java.util.List;
++
++public class JTreeUtil {
++    public static void setTreeExpandedState(JTree tree, boolean expanded) {
++        DefaultMutableTreeNode node = (DefaultMutableTreeNode) tree.getModel().getRoot();
++        setNodeExpandedState(tree, node, expanded);
++    }
++
++    public static void setNodeExpandedState(JTree tree, DefaultMutableTreeNode node, boolean expanded) {
++        for (DefaultMutableTreeNode treeNode : children(node)) {
++            setNodeExpandedState(tree, treeNode, expanded);
++        }
++        if (!expanded && node.isRoot()) {
++            return;
++        }
++        TreePath path = new TreePath(node.getPath());
++        if (expanded) {
++            tree.expandPath(path);
++        } else {
++            tree.collapsePath(path);
++        }
++    }
++
++    public static DefaultMutableTreeNode copyNode(DefaultMutableTreeNode oldNode) {
++        DefaultMutableTreeNode newNode = new DefaultMutableTreeNode(oldNode.getUserObject());
++        for (DefaultMutableTreeNode oldChildNode : JTreeUtil.children(oldNode)) {
++            DefaultMutableTreeNode newChildNode = new DefaultMutableTreeNode(oldChildNode.getUserObject());
++            newNode.add(newChildNode);
++            if (!oldChildNode.isLeaf()) {
++                copyChildrenTo(oldChildNode, newChildNode);
++            }
++        }
++        return newNode;
++    }
++
++    public static void copyChildrenTo(DefaultMutableTreeNode from, DefaultMutableTreeNode to) {
++        for (DefaultMutableTreeNode oldChildNode : JTreeUtil.children(from)) {
++            DefaultMutableTreeNode newChildNode = new DefaultMutableTreeNode(oldChildNode.getUserObject());
++            to.add(newChildNode);
++            if (!oldChildNode.isLeaf()) {
++                copyChildrenTo(oldChildNode, newChildNode);
++            }
++        }
++    }
++
++    @SuppressWarnings("unchecked")
++    public static List<DefaultMutableTreeNode> children(DefaultMutableTreeNode node) {
++        return Collections.list(node.children());
++    }
++}
+\ No newline at end of file
+Index: src/main/java/cuchaz/enigma/gui/elements/MenuBar.java
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+--- src/main/java/cuchaz/enigma/gui/elements/MenuBar.java	(revision 6a7192e18336e933f77d2e16f8f0e8eb114949e3)
++++ src/main/java/cuchaz/enigma/gui/elements/MenuBar.java	(date 1578747388752)
+@@ -12,6 +12,8 @@
+ import java.awt.*;
+ import java.awt.event.InputEvent;
+ import java.awt.event.KeyEvent;
++import java.awt.event.MouseAdapter;
++import java.awt.event.MouseEvent;
+ import java.io.File;
+ import java.io.IOException;
+ import java.net.URISyntaxException;
+@@ -201,5 +203,25 @@
+ 				});
+ 			}
+ 		}
++		{
++			JMenu menu = new JMenu("<-");
++			this.add(menu);
++			menu.addMouseListener(new MouseAdapter() {
++				@Override
++				public void mouseClicked(MouseEvent e) {
++					gui.getController().openPreviousReference();
++				}
++			});
++		}
++		{
++			JMenu menu = new JMenu("->");
++			this.add(menu);
++			menu.addMouseListener(new MouseAdapter() {
++				@Override
++				public void mouseClicked(MouseEvent e) {
++					gui.getController().openNextReference();
++				}
++			});
++		}
+ 	}
+ }
+Index: src/main/java/cuchaz/enigma/gui/Gui.java
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+--- src/main/java/cuchaz/enigma/gui/Gui.java	(revision 6a7192e18336e933f77d2e16f8f0e8eb114949e3)
++++ src/main/java/cuchaz/enigma/gui/Gui.java	(date 1597055099049)
+@@ -26,10 +26,7 @@
+ import cuchaz.enigma.gui.highlight.BoxHighlightPainter;
+ import cuchaz.enigma.gui.highlight.SelectionHighlightPainter;
+ import cuchaz.enigma.gui.highlight.TokenHighlightType;
+-import cuchaz.enigma.gui.panels.PanelDeobf;
+-import cuchaz.enigma.gui.panels.PanelEditor;
+-import cuchaz.enigma.gui.panels.PanelIdentifier;
+-import cuchaz.enigma.gui.panels.PanelObf;
++import cuchaz.enigma.gui.panels.*;
+ import cuchaz.enigma.gui.util.History;
+ import cuchaz.enigma.throwables.IllegalNameException;
+ import cuchaz.enigma.translation.mapping.*;
+@@ -51,6 +48,11 @@
+ 
+ public class Gui {
+ 
++	private static Gui INSTANCE;
++	public static Gui getInstance() {
++	    return INSTANCE;
++	}
++
+ 	public final PopupMenuBar popupMenu;
+ 	private final PanelObf obfPanel;
+ 	private final PanelDeobf deobfPanel;
+@@ -96,6 +98,7 @@
+ 	}
+ 
+ 	public Gui(EnigmaProfile profile) {
++		INSTANCE = this;
+ 		Config.getInstance().lookAndFeel.setGlobalLAF();
+ 
+ 		// init frame
+@@ -619,7 +622,7 @@
+ 		String newName = renameTextField.getText();
+ 		if (saveName && newName != null && !newName.isEmpty()) {
+ 			try {
+-				this.controller.rename(cursorReference, newName, true);
++				this.controller.rename(cursorReference, newName.replaceAll("\\.", "/"), true);
+ 			} catch (IllegalNameException ex) {
+ 				renameTextField.setBorder(BorderFactory.createLineBorder(Color.red, 1));
+ 				renameTextField.setToolTipText(ex.getReason());
+Index: src/main/java/cuchaz/enigma/gui/panels/TreeFilterDecorator.java
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+--- src/main/java/cuchaz/enigma/gui/panels/TreeFilterDecorator.java	(date 1597612313388)
++++ src/main/java/cuchaz/enigma/gui/panels/TreeFilterDecorator.java	(date 1597612313388)
+@@ -0,0 +1,106 @@
++package cuchaz.enigma.gui.panels;
++
++import cuchaz.enigma.gui.node.ClassSelectorClassNode;
++import cuchaz.enigma.gui.node.ClassSelectorPackageNode;
++import cuchaz.enigma.gui.util.JTreeUtil;
++
++import javax.swing.*;
++import javax.swing.event.DocumentEvent;
++import javax.swing.event.DocumentListener;
++import javax.swing.tree.DefaultMutableTreeNode;
++import javax.swing.tree.DefaultTreeModel;
++import java.awt.event.FocusAdapter;
++import java.awt.event.FocusEvent;
++import java.util.function.BiPredicate;
++
++public class TreeFilterDecorator {
++    private final JTree tree;
++    private DefaultMutableTreeNode originalRootNode;
++    private BiPredicate<Object, String> userObjectMatcher;
++    private JTextField filterField;
++
++    public TreeFilterDecorator(JTree tree, BiPredicate<Object, String> userObjectMatcher, JTextField filterField) {
++        this.tree = tree;
++        this.filterField = filterField;
++        this.originalRootNode = (DefaultMutableTreeNode) tree.getModel().getRoot();
++        this.userObjectMatcher = userObjectMatcher;
++    }
++
++    public static TreeFilterDecorator decorate(JTree tree, BiPredicate<Object, String> userObjectMatcher, JTextField filterField) {
++        TreeFilterDecorator tfd = new TreeFilterDecorator(tree, userObjectMatcher, filterField);
++        tfd.initFilterField();
++        return tfd;
++    }
++
++    private void initFilterField() {
++        filterField.getDocument().addDocumentListener(new DocumentListener() {
++            @Override
++            public void insertUpdate(DocumentEvent e) {
++                filterTree();
++            }
++
++            @Override
++            public void removeUpdate(DocumentEvent e) {
++                filterTree();
++            }
++
++            @Override
++            public void changedUpdate(DocumentEvent e) {
++                filterTree();
++            }
++        });
++        filterField.addFocusListener(new FocusAdapter() {
++            @Override
++            public void focusGained(FocusEvent e) {
++                filterField.selectAll();
++            }
++        });
++    }
++
++    private void filterTree() {
++        DefaultTreeModel model = (DefaultTreeModel) tree.getModel();
++        String text = filterField.getText().trim();
++        if (text.equals("") && tree.getModel().getRoot() != originalRootNode) {
++            model.setRoot(originalRootNode);
++            JTreeUtil.setTreeExpandedState(tree, true);
++        } else {
++            DefaultMutableTreeNode newRootNode = matchAndBuildNode(text, originalRootNode);
++            model.setRoot(newRootNode);
++            JTreeUtil.setTreeExpandedState(tree, true);
++        }
++    }
++
++    private DefaultMutableTreeNode matchAndBuildNode(final String text, DefaultMutableTreeNode oldNode) {
++        if (!oldNode.isRoot() && userObjectMatcher.test(oldNode.getUserObject(), text)) {
++            return JTreeUtil.copyNode(oldNode);
++        }
++        DefaultMutableTreeNode newMatchedNode;
++        if (oldNode.isRoot()) {
++            newMatchedNode = buildNewNode(oldNode);
++        } else {
++            newMatchedNode = null;
++        }
++        for (DefaultMutableTreeNode childOldNode : JTreeUtil.children(oldNode)) {
++            DefaultMutableTreeNode newMatchedChildNode = matchAndBuildNode(text, childOldNode);
++            if (newMatchedChildNode != null) {
++                if (newMatchedNode == null) {
++                    newMatchedNode = buildNewNode(oldNode);
++                }
++                newMatchedNode.add(newMatchedChildNode);
++            }
++        }
++        return newMatchedNode;
++    }
++
++    private DefaultMutableTreeNode buildNewNode(DefaultMutableTreeNode oldNode) {
++        DefaultMutableTreeNode newMatchedNode = null;
++        if (oldNode instanceof ClassSelectorPackageNode) {
++            newMatchedNode = new ClassSelectorPackageNode(((ClassSelectorPackageNode) oldNode).getPackageName());
++        } else if (oldNode instanceof ClassSelectorClassNode) {
++            newMatchedNode = new ClassSelectorClassNode(((ClassSelectorClassNode) oldNode).getObfEntry(), ((ClassSelectorClassNode) oldNode).getClassEntry());
++        } else {
++            newMatchedNode = new DefaultMutableTreeNode(oldNode.getUserObject());
++        }
++        return newMatchedNode;
++    }
++}
+\ No newline at end of file
