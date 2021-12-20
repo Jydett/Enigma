@@ -1,34 +1,27 @@
 package cuchaz.enigma.translation.mapping.serde.enigma;
 
+import java.io.IOException;
+import java.nio.file.FileSystem;
+import java.nio.file.FileSystems;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.*;
+
+import javax.annotation.Nullable;
+
 import com.google.common.base.Charsets;
+
 import cuchaz.enigma.ProgressListener;
-import cuchaz.enigma.translation.mapping.serde.MappingParseException;
 import cuchaz.enigma.translation.mapping.AccessModifier;
 import cuchaz.enigma.translation.mapping.EntryMapping;
 import cuchaz.enigma.translation.mapping.MappingPair;
-import cuchaz.enigma.translation.mapping.serde.MappingSaveParameters;
-import cuchaz.enigma.translation.mapping.serde.MappingHelper;
-import cuchaz.enigma.translation.mapping.serde.MappingsReader;
-import cuchaz.enigma.translation.mapping.serde.RawEntryMapping;
+import cuchaz.enigma.translation.mapping.serde.*;
 import cuchaz.enigma.translation.mapping.tree.EntryTree;
 import cuchaz.enigma.translation.mapping.tree.HashEntryTree;
 import cuchaz.enigma.translation.representation.MethodDescriptor;
 import cuchaz.enigma.translation.representation.TypeDescriptor;
 import cuchaz.enigma.translation.representation.entry.*;
 import cuchaz.enigma.utils.I18n;
-
-import javax.annotation.Nullable;
-import java.io.IOException;
-import java.nio.file.FileSystem;
-import java.nio.file.FileSystems;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.util.ArrayDeque;
-import java.util.Arrays;
-import java.util.Deque;
-import java.util.List;
-import java.util.Locale;
-import java.util.stream.Collectors;
 
 public enum EnigmaMappingsReader implements MappingsReader {
 	FILE {
@@ -52,7 +45,7 @@ public enum EnigmaMappingsReader implements MappingsReader {
 			List<Path> files = Files.walk(root)
 					.filter(f -> !Files.isDirectory(f))
 					.filter(f -> f.toString().endsWith(".mapping"))
-					.collect(Collectors.toList());
+					.toList();
 
 			progress.init(files.size(), I18n.translate("progress.mappings.enigma_directory.loading"));
 			int step = 0;
@@ -77,7 +70,35 @@ public enum EnigmaMappingsReader implements MappingsReader {
 		}
 	};
 
-	protected void readFile(Path path, EntryTree<EntryMapping> mappings) throws IOException, MappingParseException {
+	/**
+	 * Reads multiple Enigma mapping files.
+	 *
+	 * @param progress the progress listener
+	 * @param paths    the Enigma files to read; cannot be empty
+	 * @return the parsed mappings
+	 * @throws MappingParseException    if a mapping file cannot be parsed
+	 * @throws IOException              if an IO error occurs
+	 * @throws IllegalArgumentException if there are no paths to read
+	 */
+	public static EntryTree<EntryMapping> readFiles(ProgressListener progress, Path... paths) throws MappingParseException, IOException {
+		EntryTree<EntryMapping> mappings = new HashEntryTree<>();
+
+		if (paths.length == 0) {
+			throw new IllegalArgumentException("No paths to read mappings from");
+		}
+
+		progress.init(paths.length, I18n.translate("progress.mappings.enigma_directory.loading"));
+		int step = 0;
+
+		for (Path file : paths) {
+			progress.step(step++, paths.toString());
+			readFile(file, mappings);
+		}
+
+		return mappings;
+	}
+
+	private static void readFile(Path path, EntryTree<EntryMapping> mappings) throws IOException, MappingParseException {
 		List<String> lines = Files.readAllLines(path, Charsets.UTF_8);
 		Deque<MappingPair<?, RawEntryMapping>> mappingStack = new ArrayDeque<>();
 
@@ -96,9 +117,6 @@ public enum EnigmaMappingsReader implements MappingsReader {
 				MappingPair<?, RawEntryMapping> pair = parseLine(mappingStack.peek(), line);
 				if (pair != null) {
 					mappingStack.push(pair);
-					if (pair.getMapping() != null) {
-
-					}
 				}
 			} catch (Throwable t) {
 				t.printStackTrace();
@@ -110,7 +128,7 @@ public enum EnigmaMappingsReader implements MappingsReader {
 		cleanMappingStack(0, mappingStack, mappings);
 	}
 
-	private void cleanMappingStack(int indentation, Deque<MappingPair<?, RawEntryMapping>> mappingStack, EntryTree<EntryMapping> mappings) {
+	private static void cleanMappingStack(int indentation, Deque<MappingPair<?, RawEntryMapping>> mappingStack, EntryTree<EntryMapping> mappings) {
 		while (indentation < mappingStack.size()) {
 			MappingPair<?, RawEntryMapping> pair = mappingStack.pop();
 			if (pair.getMapping() != null) {
@@ -120,7 +138,7 @@ public enum EnigmaMappingsReader implements MappingsReader {
 	}
 
 	@Nullable
-	private String formatLine(String line) {
+	private static String formatLine(String line) {
 		line = stripComment(line);
 		line = line.trim();
 
@@ -131,7 +149,7 @@ public enum EnigmaMappingsReader implements MappingsReader {
 		return line;
 	}
 
-	private String stripComment(String line) {
+	private static String stripComment(String line) {
 		//Dont support comments on javadoc lines
 		if (line.trim().startsWith(EnigmaFormat.COMMENT)) {
 			return line;
@@ -144,7 +162,7 @@ public enum EnigmaMappingsReader implements MappingsReader {
 		return line;
 	}
 
-	private int countIndentation(String line) {
+	private static int countIndentation(String line) {
 		int indent = 0;
 		for (int i = 0; i < line.length(); i++) {
 			if (line.charAt(i) != '\t') {
@@ -155,7 +173,7 @@ public enum EnigmaMappingsReader implements MappingsReader {
 		return indent;
 	}
 
-	private MappingPair<?, RawEntryMapping> parseLine(@Nullable MappingPair<?, RawEntryMapping> parent, String line) {
+	private static MappingPair<?, RawEntryMapping> parseLine(@Nullable MappingPair<?, RawEntryMapping> parent, String line) {
 		String[] tokens = line.trim().split("\\s");
 		String keyToken = tokens[0].toUpperCase(Locale.ROOT);
 		Entry<?> parentEntry = parent == null ? null : parent.getEntry();
@@ -176,19 +194,19 @@ public enum EnigmaMappingsReader implements MappingsReader {
 				throw new RuntimeException("Unknown token '" + keyToken + "'");
 		}
 	}
-	
-	private void readJavadoc(MappingPair<?, RawEntryMapping> parent, String[] tokens) {
+
+	private static void readJavadoc(MappingPair<?, RawEntryMapping> parent, String[] tokens) {
 		if (parent == null)
 			throw new IllegalStateException("Javadoc has no parent!");
 		// Empty string to concat
-		String jdLine = tokens.length > 1 ? String.join(" ", Arrays.copyOfRange(tokens,1,tokens.length))  : "";
+		String jdLine = tokens.length > 1 ? String.join(" ", Arrays.copyOfRange(tokens, 1, tokens.length)) : "";
 		if (parent.getMapping() == null) {
 			parent.setMapping(new RawEntryMapping(parent.getEntry().getName(), AccessModifier.UNCHANGED));
 		}
 		parent.getMapping().addJavadocLine(MappingHelper.unescape(jdLine));
 	}
 
-	private MappingPair<ClassEntry, RawEntryMapping> parseClass(@Nullable Entry<?> parent, String[] tokens) {
+	private static MappingPair<ClassEntry, RawEntryMapping> parseClass(@Nullable Entry<?> parent, String[] tokens) {
 		String obfuscatedName = ClassEntry.getInnerName(tokens[1]);
 		ClassEntry obfuscatedEntry;
 		if (parent instanceof ClassEntry) {
@@ -213,14 +231,10 @@ public enum EnigmaMappingsReader implements MappingsReader {
 			modifier = parseModifier(tokens[3]);
 		}
 
-		if (mapping != null) {
-			return new MappingPair<>(obfuscatedEntry, new RawEntryMapping(mapping, modifier));
-		} else {
-			return new MappingPair<>(obfuscatedEntry);
-		}
+		return new MappingPair<>(obfuscatedEntry, new RawEntryMapping(mapping, modifier));
 	}
 
-	private MappingPair<FieldEntry, RawEntryMapping> parseField(@Nullable Entry<?> parent, String[] tokens) {
+	private static MappingPair<FieldEntry, RawEntryMapping> parseField(@Nullable Entry<?> parent, String[] tokens) {
 		if (!(parent instanceof ClassEntry)) {
 			throw new RuntimeException("Field must be a child of a class!");
 		}
@@ -228,12 +242,11 @@ public enum EnigmaMappingsReader implements MappingsReader {
 		ClassEntry ownerEntry = (ClassEntry) parent;
 
 		String obfuscatedName = tokens[1];
-		String mapping = obfuscatedName;
+		String mapping = null;
 		AccessModifier modifier = AccessModifier.UNCHANGED;
 		TypeDescriptor descriptor;
 
 		if (tokens.length == 3) {
-			mapping = tokens[1];
 			descriptor = new TypeDescriptor(tokens[2]);
 		} else if (tokens.length == 4) {
 			AccessModifier parsedModifier = parseModifier(tokens[3]);
@@ -245,22 +258,18 @@ public enum EnigmaMappingsReader implements MappingsReader {
 				descriptor = new TypeDescriptor(tokens[3]);
 			}
 		} else if (tokens.length == 5) {
-			descriptor = new TypeDescriptor(tokens[3]);
 			mapping = tokens[2];
-			modifier = parseModifier(tokens[4]);
+			modifier = parseModifier(tokens[3]);
+			descriptor = new TypeDescriptor(tokens[4]);
 		} else {
 			throw new RuntimeException("Invalid field declaration");
 		}
 
 		FieldEntry obfuscatedEntry = new FieldEntry(ownerEntry, obfuscatedName, descriptor);
-		if (mapping != null) {
-			return new MappingPair<>(obfuscatedEntry, new RawEntryMapping(mapping, modifier));
-		} else {
-			return new MappingPair<>(obfuscatedEntry);
-		}
+		return new MappingPair<>(obfuscatedEntry, new RawEntryMapping(mapping, modifier));
 	}
 
-	private MappingPair<MethodEntry, RawEntryMapping> parseMethod(@Nullable Entry<?> parent, String[] tokens) {
+	private static MappingPair<MethodEntry, RawEntryMapping> parseMethod(@Nullable Entry<?> parent, String[] tokens) {
 		if (!(parent instanceof ClassEntry)) {
 			throw new RuntimeException("Method must be a child of a class!");
 		}
@@ -293,14 +302,10 @@ public enum EnigmaMappingsReader implements MappingsReader {
 		}
 
 		MethodEntry obfuscatedEntry = new MethodEntry(ownerEntry, obfuscatedName, descriptor);
-		if (mapping != null) {
-			return new MappingPair<>(obfuscatedEntry, new RawEntryMapping(mapping, modifier));
-		} else {
-			return new MappingPair<>(obfuscatedEntry);
-		}
+		return new MappingPair<>(obfuscatedEntry, new RawEntryMapping(mapping, modifier));
 	}
 
-	private MappingPair<LocalVariableEntry, RawEntryMapping> parseArgument(@Nullable Entry<?> parent, String[] tokens) {
+	private static MappingPair<LocalVariableEntry, RawEntryMapping> parseArgument(@Nullable Entry<?> parent, String[] tokens) {
 		if (!(parent instanceof MethodEntry)) {
 			throw new RuntimeException("Method arg must be a child of a method!");
 		}
@@ -313,7 +318,7 @@ public enum EnigmaMappingsReader implements MappingsReader {
 	}
 
 	@Nullable
-	private AccessModifier parseModifier(String token) {
+	private static AccessModifier parseModifier(String token) {
 		if (token.startsWith("ACC:")) {
 			return AccessModifier.valueOf(token.substring(4));
 		}

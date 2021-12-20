@@ -11,6 +11,7 @@
 
 package cuchaz.enigma.translation.representation.entry;
 
+import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
 
 import com.google.common.base.Preconditions;
@@ -41,11 +42,26 @@ public abstract class ParentedEntry<P extends Entry<?>> implements Entry<P> {
 	@Override
 	public abstract ParentedEntry<P> withName(String name);
 
-	protected abstract TranslateResult<? extends ParentedEntry<P>> extendedTranslate(Translator translator, @Nullable EntryMapping mapping);
+	protected abstract TranslateResult<? extends ParentedEntry<P>> extendedTranslate(Translator translator, @Nonnull EntryMapping mapping);
 
 	@Override
 	public String getName() {
-		return name;
+		return this.name;
+	}
+
+	@Override
+	public String getSimpleName() {
+		return this.name;
+	}
+
+	@Override
+	public String getFullName() {
+		return this.parent.getFullName() + "." + this.name;
+	}
+
+	@Override
+	public String getContextualName() {
+		return this.parent.getContextualName() + "." + this.name;
 	}
 
 	@Override
@@ -78,6 +94,6 @@ public abstract class ParentedEntry<P extends Entry<?>> implements Entry<P> {
 				return mapping;
 			}
 		}
-		return null;
+		return EntryMapping.DEFAULT;
 	}
 }

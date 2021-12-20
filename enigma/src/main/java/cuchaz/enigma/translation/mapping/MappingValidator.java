@@ -2,7 +2,7 @@ package cuchaz.enigma.translation.mapping;
 
 import java.util.Collection;
 import java.util.HashSet;
-import java.util.stream.Collectors;
+import java.util.List;
 
 import cuchaz.enigma.analysis.index.InheritanceIndex;
 import cuchaz.enigma.analysis.index.JarIndex;
@@ -25,25 +25,29 @@ public class MappingValidator {
 		this.index = index;
 	}
 
-	public void validateRename(ValidationContext vc, Entry<?> entry, String name) {
+	public boolean validateRename(ValidationContext vc, Entry<?> entry, String name) {
 		Collection<Entry<?>> equivalentEntries = index.getEntryResolver().resolveEquivalentEntries(entry);
+		boolean error = false;
 		for (Entry<?> equivalentEntry : equivalentEntries) {
 			equivalentEntry.validateName(vc, name);
-			validateUnique(vc, equivalentEntry, name);
+			error |= validateUnique(vc, equivalentEntry, name);
 		}
+		return error;
 	}
 
-	private void validateUnique(ValidationContext vc, Entry<?> entry, String name) {
+	private boolean validateUnique(ValidationContext vc, Entry<?> entry, String name) {
 		ClassEntry containingClass = entry.getContainingClass();
 		Collection<ClassEntry> relatedClasses = getRelatedClasses(containingClass);
+
+		boolean error = false;
 
 		for (ClassEntry relatedClass : relatedClasses) {
 			Entry<?> relatedEntry = entry.replaceAncestor(containingClass, relatedClass);
 			Entry<?> translatedEntry = deobfuscator.translate(relatedEntry);
 
-			Collection<Entry<?>> translatedSiblings = obfToDeobf.getSiblings(relatedEntry).stream()
+			List<? extends Entry<?>> translatedSiblings = obfToDeobf.getSiblings(relatedEntry).stream()
 					.map(deobfuscator::translate)
-					.collect(Collectors.toList());
+					.toList();
 
 			if (!isUnique(translatedEntry, translatedSiblings, name)) {
 				Entry<?> parent = translatedEntry.getParent();
@@ -52,8 +56,11 @@ public class MappingValidator {
 				} else {
 					vc.raise(Message.NONUNIQUE_NAME, name);
 				}
+				error = true;
 			}
 		}
+
+		return error;
 	}
 
 	private Collection<ClassEntry> getRelatedClasses(ClassEntry classEntry) {
@@ -67,7 +74,7 @@ public class MappingValidator {
 		return relatedClasses;
 	}
 
-	private boolean isUnique(Entry<?> entry, Collection<Entry<?>> siblings, String name) {
+	private boolean isUnique(Entry<?> entry, List<? extends Entry<?>> siblings, String name) {
 		for (Entry<?> sibling : siblings) {
 			if (entry.canConflictWith(sibling) && sibling.getName().equals(name)) {
 				return false;

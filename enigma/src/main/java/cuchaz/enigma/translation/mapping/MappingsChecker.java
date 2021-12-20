@@ -24,7 +24,6 @@ import cuchaz.enigma.translation.representation.entry.MethodEntry;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.Map;
-import java.util.stream.Collectors;
 
 public class MappingsChecker {
 	private final JarIndex index;
@@ -40,7 +39,7 @@ public class MappingsChecker {
 
 		Collection<Entry<?>> obfEntries = mappings.getAllEntries()
 				.filter(e -> e instanceof ClassEntry || e instanceof MethodEntry || e instanceof FieldEntry || e instanceof LocalVariableEntry)
-				.collect(Collectors.toList());
+				.toList();
 
 		progress.init(obfEntries.size(), "Checking for dropped mappings");
 
@@ -68,15 +67,36 @@ public class MappingsChecker {
 		if (!index.getEntryIndex().hasEntry(entry)) {
 			return true;
 		}
+
+		if (entry instanceof LocalVariableEntry localVariableEntry) {
+			// Drop local variables only if the method entry is to be dropped
+			return shouldDropEntry(localVariableEntry.getParent());
+		}
+
 		Collection<Entry<?>> resolvedEntries = index.getEntryResolver().resolveEntry(entry, ResolutionStrategy.RESOLVE_ROOT);
-		return !resolvedEntries.contains(entry);
+
+		if (resolvedEntries.isEmpty()) {
+			// Entry doesn't exist at all, drop it.
+			return true;
+		} else if (resolvedEntries.contains(entry)) {
+			// Entry is the root, don't drop it.
+			return false;
+		}
+
+		if (entry instanceof MethodEntry && mappings.getChildren(entry).size() > 0) {
+			// Method entry has parameter names, keep it even though it's not the root.
+			return false;
+		}
+
+		// Entry is not the root, and is not a method with params
+		return true;
 	}
 
 	public static class Dropped {
 		private final Map<Entry<?>, String> droppedMappings = new HashMap<>();
 
 		public void drop(Entry<?> entry, EntryMapping mapping) {
-			droppedMappings.put(entry, mapping.getTargetName());
+			droppedMappings.put(entry, mapping.targetName() != null ? mapping.targetName() : entry.getName());
 		}
 
 		void apply(EntryTree<EntryMapping> mappings) {

@@ -1,13 +1,11 @@
 package cuchaz.enigma.gui.elements;
 
-import java.awt.FileDialog;
 import java.awt.event.InputEvent;
 import java.awt.event.KeyEvent;
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.util.Arrays;
 import java.util.Locale;
 import java.util.Map;
@@ -32,8 +30,6 @@ import cuchaz.enigma.utils.Pair;
 
 public class MenuBar {
 
-	private final JMenuBar ui = new JMenuBar();
-
 	private final JMenu fileMenu = new JMenu();
 	private final JMenuItem jarOpenItem = new JMenuItem();
 	private final JMenuItem jarCloseItem = new JMenuItem();
@@ -57,7 +53,11 @@ public class MenuBar {
 	private final JMenu scaleMenu = new JMenu();
 	private final JMenuItem fontItem = new JMenuItem();
 	private final JMenuItem customScaleItem = new JMenuItem();
-	private final JMenuItem searchItem = new JMenuItem();
+
+	private final JMenu searchMenu = new JMenu();
+	private final JMenuItem searchClassItem = new JMenuItem(GuiUtil.CLASS_ICON);
+	private final JMenuItem searchMethodItem = new JMenuItem(GuiUtil.METHOD_ICON);
+	private final JMenuItem searchFieldItem = new JMenuItem(GuiUtil.FIELD_ICON);
 
 	private final JMenu collabMenu = new JMenu();
 	private final JMenuItem connectItem = new JMenuItem();
@@ -71,6 +71,8 @@ public class MenuBar {
 
 	public MenuBar(Gui gui) {
 		this.gui = gui;
+
+		JMenuBar ui = gui.getMainWindow().menuBar();
 
 		this.retranslateUi();
 
@@ -99,29 +101,32 @@ public class MenuBar {
 		this.fileMenu.add(this.statsItem);
 		this.fileMenu.addSeparator();
 		this.fileMenu.add(this.exitItem);
-		this.ui.add(this.fileMenu);
+		ui.add(this.fileMenu);
 
-		this.ui.add(this.decompilerMenu);
+		ui.add(this.decompilerMenu);
 
 		this.viewMenu.add(this.themesMenu);
 		this.viewMenu.add(this.languagesMenu);
 		this.scaleMenu.add(this.customScaleItem);
 		this.viewMenu.add(this.scaleMenu);
 		this.viewMenu.add(this.fontItem);
-		this.viewMenu.addSeparator();
-		this.viewMenu.add(this.searchItem);
-		this.ui.add(this.viewMenu);
+		ui.add(this.viewMenu);
+
+		this.searchMenu.add(this.searchClassItem);
+		this.searchMenu.add(this.searchMethodItem);
+		this.searchMenu.add(this.searchFieldItem);
+		ui.add(this.searchMenu);
 
 		this.collabMenu.add(this.connectItem);
 		this.collabMenu.add(this.startServerItem);
-		this.ui.add(this.collabMenu);
+		ui.add(this.collabMenu);
 
 		this.helpMenu.add(this.aboutItem);
 		this.helpMenu.add(this.githubItem);
-		this.ui.add(this.helpMenu);
+		ui.add(this.helpMenu);
 
 		this.saveMappingsItem.setAccelerator(KeyStroke.getKeyStroke(KeyEvent.VK_S, InputEvent.CTRL_DOWN_MASK));
-		this.searchItem.setAccelerator(KeyStroke.getKeyStroke(KeyEvent.VK_SPACE, InputEvent.SHIFT_DOWN_MASK));
+		this.searchClassItem.setAccelerator(KeyStroke.getKeyStroke(KeyEvent.VK_SPACE, InputEvent.SHIFT_DOWN_MASK));
 
 		this.jarOpenItem.addActionListener(_e -> this.onOpenJarClicked());
 		this.jarCloseItem.addActionListener(_e -> this.gui.getController().closeJar());
@@ -136,7 +141,9 @@ public class MenuBar {
 		this.exitItem.addActionListener(_e -> this.gui.close());
 		this.customScaleItem.addActionListener(_e -> this.onCustomScaleClicked());
 		this.fontItem.addActionListener(_e -> this.onFontClicked(this.gui));
-		this.searchItem.addActionListener(_e -> this.onSearchClicked());
+		this.searchClassItem.addActionListener(_e -> this.onSearchClicked(SearchDialog.Type.CLASS));
+		this.searchMethodItem.addActionListener(_e -> this.onSearchClicked(SearchDialog.Type.METHOD));
+		this.searchFieldItem.addActionListener(_e -> this.onSearchClicked(SearchDialog.Type.FIELD));
 		this.connectItem.addActionListener(_e -> this.onConnectClicked());
 		this.startServerItem.addActionListener(_e -> this.onStartServerClicked());
 		this.aboutItem.addActionListener(_e -> AboutDialog.show(this.gui.getFrame()));
@@ -188,7 +195,11 @@ public class MenuBar {
 		this.scaleMenu.setText(I18n.translate("menu.view.scale"));
 		this.fontItem.setText(I18n.translate("menu.view.font"));
 		this.customScaleItem.setText(I18n.translate("menu.view.scale.custom"));
-		this.searchItem.setText(I18n.translate("menu.view.search"));
+
+		this.searchMenu.setText(I18n.translate("menu.search"));
+		this.searchClassItem.setText(I18n.translate("menu.search.class"));
+		this.searchMethodItem.setText(I18n.translate("menu.search.method"));
+		this.searchFieldItem.setText(I18n.translate("menu.search.field"));
 
 		this.collabMenu.setText(I18n.translate("menu.collab"));
 		this.connectItem.setText(I18n.translate("menu.collab.connect"));
@@ -199,23 +210,25 @@ public class MenuBar {
 		this.githubItem.setText(I18n.translate("menu.help.github"));
 	}
 
-	public JMenuBar getUi() {
-		return this.ui;
-	}
-
 	private void onOpenJarClicked() {
-		FileDialog d = this.gui.jarFileChooser;
-		d.setDirectory(UiConfig.getLastSelectedDir());
+		JFileChooser d = this.gui.jarFileChooser;
+		d.setCurrentDirectory(new File(UiConfig.getLastSelectedDir()));
 		d.setVisible(true);
-		String file = d.getFile();
+		int result = d.showOpenDialog(gui.getFrame());
+
+		if (result != JFileChooser.APPROVE_OPTION) {
+			return;
+		}
+
+		File file = d.getSelectedFile();
 		// checks if the file name is not empty
 		if (file != null) {
-			Path path = Paths.get(d.getDirectory()).resolve(file);
+			Path path = file.toPath();
 			// checks if the file name corresponds to an existing file
 			if (Files.exists(path)) {
 				this.gui.getController().openJar(path);
 			}
-			UiConfig.setLastSelectedDir(d.getDirectory());
+			UiConfig.setLastSelectedDir(d.getCurrentDirectory().getAbsolutePath());
 		}
 	}
 
@@ -227,8 +240,7 @@ public class MenuBar {
 		if (this.gui.getController().isDirty()) {
 			this.gui.showDiscardDiag((response -> {
 				if (response == JOptionPane.YES_OPTION) {
-					this.gui.saveMapping();
-					then.run();
+					this.gui.saveMapping().thenRun(then);
 				} else if (response == JOptionPane.NO_OPTION)
 					then.run();
 				return null;
@@ -259,18 +271,24 @@ public class MenuBar {
 	}
 
 	private void onExportJarClicked() {
-		this.gui.exportJarFileChooser.setDirectory(UiConfig.getLastSelectedDir());
+		this.gui.exportJarFileChooser.setCurrentDirectory(new File(UiConfig.getLastSelectedDir()));
 		this.gui.exportJarFileChooser.setVisible(true);
-		if (this.gui.exportJarFileChooser.getFile() != null) {
-			Path path = Paths.get(this.gui.exportJarFileChooser.getDirectory(), this.gui.exportJarFileChooser.getFile());
+		int result = this.gui.exportJarFileChooser.showSaveDialog(gui.getFrame());
+
+		if (result != JFileChooser.APPROVE_OPTION) {
+			return;
+		}
+
+		if (this.gui.exportJarFileChooser.getSelectedFile() != null) {
+			Path path = this.gui.exportJarFileChooser.getSelectedFile().toPath();
 			this.gui.getController().exportJar(path);
-			UiConfig.setLastSelectedDir(this.gui.exportJarFileChooser.getDirectory());
+			UiConfig.setLastSelectedDir(this.gui.exportJarFileChooser.getCurrentDirectory().getAbsolutePath());
 		}
 	}
 
 	private void onCustomScaleClicked() {
 		String answer = (String) JOptionPane.showInputDialog(this.gui.getFrame(), I18n.translate("menu.view.scale.custom.title"), I18n.translate("menu.view.scale.custom.title"),
-				JOptionPane.QUESTION_MESSAGE, null, null, Float.toString(ScaleUtil.getScaleFactor() * 100));
+				JOptionPane.QUESTION_MESSAGE, null, null, Float.toString(UiConfig.getScaleFactor() * 100));
 		if (answer == null) return;
 		float newScale = 1.0f;
 		try {
@@ -295,9 +313,9 @@ public class MenuBar {
 		FontDialog.display(gui.getFrame());
 	}
 
-	private void onSearchClicked() {
+	private void onSearchClicked(SearchDialog.Type type) {
 		if (this.gui.getController().project != null) {
-			this.gui.getSearchDialog().show();
+			this.gui.getSearchDialog().show(type);
 		}
 	}
 
@@ -455,7 +473,7 @@ public class MenuBar {
 				})
 				.collect(Collectors.toMap(x -> x.a, x -> x.b));
 
-		JRadioButtonMenuItem currentScaleButton = scaleButtons.get(ScaleUtil.getScaleFactor());
+		JRadioButtonMenuItem currentScaleButton = scaleButtons.get(UiConfig.getScaleFactor());
 		if (currentScaleButton != null) {
 			currentScaleButton.setSelected(true);
 		}

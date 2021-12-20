@@ -11,6 +11,7 @@
 
 package cuchaz.enigma.gui;
 
+import java.awt.Component;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.util.*;
@@ -27,6 +28,7 @@ import com.google.common.collect.Maps;
 import com.google.common.collect.Multimap;
 import cuchaz.enigma.gui.node.ClassSelectorClassNode;
 import cuchaz.enigma.gui.node.ClassSelectorPackageNode;
+import cuchaz.enigma.gui.util.GuiUtil;
 import cuchaz.enigma.translation.Translator;
 import cuchaz.enigma.translation.representation.entry.ClassEntry;
 import cuchaz.enigma.utils.validation.ValidationContext;
@@ -61,18 +63,34 @@ public class ClassSelector extends JTree {
 				if (selectionListener != null && event.getClickCount() == 2) {
 					// get the selected node
 					TreePath path = getSelectionPath();
-					if (path != null && path.getLastPathComponent() instanceof ClassSelectorClassNode) {
-						ClassSelectorClassNode node = (ClassSelectorClassNode) path.getLastPathComponent();
+					if (path != null && path.getLastPathComponent() instanceof ClassSelectorClassNode node) {
 						selectionListener.onSelectClass(node.getObfEntry());
 					}
 				}
 			}
 		});
 
+		final DefaultTreeCellRenderer renderer = new DefaultTreeCellRenderer() {
+			{
+				setLeafIcon(GuiUtil.CLASS_ICON);
+			}
+
+			@Override
+			public Component getTreeCellRendererComponent(JTree tree, Object value, boolean sel, boolean expanded, boolean leaf, int row, boolean hasFocus) {
+				super.getTreeCellRendererComponent(tree, value, sel, expanded, leaf, row, hasFocus);
+
+				if (leaf && value instanceof ClassSelectorClassNode) {
+					setIcon(GuiUtil.getClassIcon(gui, ((ClassSelectorClassNode) value).getObfEntry()));
+				}
+
+				return this;
+			}
+		};
+		setCellRenderer(renderer);
+
 		final JTree tree = this;
 
-		final DefaultTreeCellEditor editor = new DefaultTreeCellEditor(tree,
-				(DefaultTreeCellRenderer) tree.getCellRenderer()) {
+		final DefaultTreeCellEditor editor = new DefaultTreeCellEditor(tree, renderer) {
 			@Override
 			public boolean isCellEditable(EventObject event) {
 				return isRenamable && !(event instanceof MouseEvent) && super.isCellEditable(event);
@@ -86,8 +104,7 @@ public class ClassSelector extends JTree {
 				TreePath path = getSelectionPath();
 
 				Object realPath = path.getLastPathComponent();
-				if (realPath != null && realPath instanceof DefaultMutableTreeNode && data != null) {
-					DefaultMutableTreeNode node = (DefaultMutableTreeNode) realPath;
+				if (realPath instanceof DefaultMutableTreeNode node && data != null) {
 					TreeNode parentNode = node.getParent();
 					if (parentNode == null)
 						return;
@@ -232,8 +249,7 @@ public class ClassSelector extends JTree {
 	public ClassEntry getSelectedClass() {
 		if (!isSelectionEmpty()) {
 			Object selectedNode = getSelectionPath().getLastPathComponent();
-			if (selectedNode instanceof ClassSelectorClassNode) {
-				ClassSelectorClassNode classNode = (ClassSelectorClassNode) selectedNode;
+			if (selectedNode instanceof ClassSelectorClassNode classNode) {
 				return classNode.getClassEntry();
 			}
 		}
@@ -243,11 +259,9 @@ public class ClassSelector extends JTree {
 	public String getSelectedPackage() {
 		if (!isSelectionEmpty()) {
 			Object selectedNode = getSelectionPath().getLastPathComponent();
-			if (selectedNode instanceof ClassSelectorPackageNode) {
-				ClassSelectorPackageNode packageNode = (ClassSelectorPackageNode) selectedNode;
+			if (selectedNode instanceof ClassSelectorPackageNode packageNode) {
 				return packageNode.getPackageName();
-			} else if (selectedNode instanceof ClassSelectorClassNode) {
-				ClassSelectorClassNode classNode = (ClassSelectorClassNode) selectedNode;
+			} else if (selectedNode instanceof ClassSelectorClassNode classNode) {
 				return classNode.getClassEntry().getPackageName();
 			}
 		}
@@ -302,12 +316,8 @@ public class ClassSelector extends JTree {
 
 		for (StateEntry entry : expansionState) {
 			switch (entry.state) {
-				case SELECTED:
-					tree.addSelectionPath(entry.path);
-					break;
-				case EXPANDED:
-					tree.expandPath(entry.path);
-					break;
+				case SELECTED -> tree.addSelectionPath(entry.path);
+				case EXPANDED -> tree.expandPath(entry.path);
 			}
 		}
 	}
@@ -348,6 +358,12 @@ public class ClassSelector extends JTree {
 	public void expandAll() {
 		for (ClassSelectorPackageNode packageNode : packageNodes()) {
 			expandPath(new TreePath(new Object[]{getModel().getRoot(), packageNode}));
+		}
+	}
+
+	public void collapseAll() {
+		for (ClassSelectorPackageNode packageNode : packageNodes()) {
+			collapsePath(new TreePath(new Object[]{getModel().getRoot(), packageNode}));
 		}
 	}
 

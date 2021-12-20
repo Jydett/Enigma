@@ -10,6 +10,8 @@ import javax.swing.JLabel;
 import javax.swing.JPanel;
 import javax.swing.text.Document;
 
+import com.formdev.flatlaf.FlatClientProperties;
+
 import cuchaz.enigma.gui.events.ConvertingTextFieldListener;
 import cuchaz.enigma.gui.util.GuiUtil;
 import cuchaz.enigma.utils.validation.ParameterizedMessage;
@@ -23,7 +25,8 @@ public class ConvertingTextField implements Validatable {
 	private final JPanel ui;
 	private final ValidatableTextField textField;
 	private final JLabel label;
-	private boolean isEditing = false;
+	private boolean editing = false;
+	private boolean editable = true;
 
 	private final Set<ConvertingTextFieldListener> listeners = new HashSet<>();
 
@@ -31,6 +34,7 @@ public class ConvertingTextField implements Validatable {
 		this.ui = new JPanel();
 		this.ui.setLayout(new GridLayout(1, 1, 0, 0));
 		this.textField = new ValidatableTextField(text);
+		this.textField.putClientProperty(FlatClientProperties.SELECT_ALL_ON_FOCUS_POLICY, FlatClientProperties.SELECT_ALL_ON_FOCUS_POLICY_NEVER);
 		this.label = GuiUtil.unboldLabel(new JLabel(text));
 		this.label.setBorder(BorderFactory.createLoweredBevelBorder());
 
@@ -65,10 +69,11 @@ public class ConvertingTextField implements Validatable {
 	}
 
 	public void startEditing() {
-		if (isEditing) return;
+		if (this.editing || !this.editable) return;
+
 		this.ui.removeAll();
 		this.ui.add(this.textField);
-		this.isEditing = true;
+		this.editing = true;
 		this.ui.validate();
 		this.ui.repaint();
 		this.textField.requestFocusInWindow();
@@ -77,7 +82,7 @@ public class ConvertingTextField implements Validatable {
 	}
 
 	public void stopEditing(boolean abort) {
-		if (!isEditing) return;
+		if (!editing) return;
 
 		if (!listeners.stream().allMatch(l -> l.tryStopEditing(this, abort))) return;
 
@@ -89,7 +94,7 @@ public class ConvertingTextField implements Validatable {
 
 		this.ui.removeAll();
 		this.ui.add(this.label);
-		this.isEditing = false;
+		this.editing = false;
 		this.ui.validate();
 		this.ui.repaint();
 		this.listeners.forEach(l -> l.onStopEditing(this, abort));
@@ -102,19 +107,28 @@ public class ConvertingTextField implements Validatable {
 	}
 
 	public void setEditText(String text) {
-		if (!isEditing) return;
+		if (!editing) return;
 
 		this.textField.setText(text);
 	}
 
+	public void setEditable(boolean editable) {
+		if (!editable) {
+			this.stopEditing(true);
+		}
+
+		this.label.setEnabled(editable);
+		this.editable = editable;
+	}
+
 	public void selectAll() {
-		if (!isEditing) return;
+		if (!editing) return;
 
 		this.textField.selectAll();
 	}
 
 	public void selectSubstring(int startIndex) {
-		if (!isEditing) return;
+		if (!editing) return;
 
 		Document doc = this.textField.getDocument();
 		if (doc != null) {
@@ -123,13 +137,13 @@ public class ConvertingTextField implements Validatable {
 	}
 
 	public void selectSubstring(int startIndex, int endIndex) {
-		if (!isEditing) return;
+		if (!editing) return;
 
 		this.textField.select(startIndex, endIndex);
 	}
 
 	public String getText() {
-		if (isEditing) {
+		if (editing) {
 			return this.textField.getText();
 		} else {
 			return this.label.getText();
@@ -141,7 +155,7 @@ public class ConvertingTextField implements Validatable {
 	}
 
 	public boolean hasChanges() {
-		if (!isEditing) return false;
+		if (!editing) return false;
 		return !this.textField.getText().equals(this.label.getText());
 	}
 

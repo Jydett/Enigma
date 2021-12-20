@@ -13,7 +13,6 @@ import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
-import java.util.stream.Collectors;
 
 public class SourceIndex {
     private String source;
@@ -88,6 +87,7 @@ public class SourceIndex {
             EntryReference<Entry<?>, Entry<?>> reference = new EntryReference<>(deobfEntry, token.text);
             tokenToReference.put(token, reference);
             referenceToTokens.put(reference, token);
+            referenceToTokens.put(EntryReference.declaration(deobfEntry, token.text), token);
             declarationToToken.put(deobfEntry, token);
         }
     }
@@ -158,7 +158,7 @@ public class SourceIndex {
             Collection<Token> newTokens = oldTokens
                     .stream()
                     .map(result::getRemappedToken)
-                    .collect(Collectors.toList());
+                    .toList();
 
             remapped.referenceToTokens.putAll(reference, newTokens);
         }

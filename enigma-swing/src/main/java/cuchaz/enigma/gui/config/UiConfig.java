@@ -19,10 +19,28 @@ public final class UiConfig {
 	// Swing specific configuration such as theming
 	private static final ConfigContainer swing = ConfigContainer.getOrCreate("enigma/enigmaswing");
 
+	// These are used for getting stuff that needs to stay constant for the
+	// runtime of the program, e.g. the current theme, because changing of these
+	// settings without a restart isn't implemented correctly yet.
+	// Don't change the values in this container with the expectation that they
+	// get saved, this is purely a backup of the configuration that existed at
+	// startup.
+	private static ConfigSection runningSwing;
+
 	static {
 		if (!swing.existsOnDisk() && !ui.existsOnDisk()) {
 			OldConfigImporter.doImport();
 		}
+
+		UiConfig.snapshotConfig();
+	}
+
+	// Saves the current configuration state so a consistent user interface can
+	// be provided for parts of the interface that don't support changing the
+	// configuration at runtime. Calling this after any UI elements are
+	// displayed can lead to visual glitches!
+	public static void snapshotConfig() {
+		runningSwing = swing.data().copy();
 	}
 
 	public static void save() {
@@ -42,10 +60,27 @@ public final class UiConfig {
 		return (float) swing.data().section("General").setIfAbsentDouble("Scale Factor", 1.0);
 	}
 
+	public static float getActiveScaleFactor() {
+		return (float) runningSwing.section("General").setIfAbsentDouble("Scale Factor", 1.0);
+	}
+
 	public static void setScaleFactor(float scale) {
 		swing.data().section("General").setDouble("Scale Factor", scale);
 	}
 
+	/**
+	 * Gets the dimensions of the different panels of the GUI.
+	 * <p>These dimensions are used to determine the location of the separators between these panels.</p>
+	 *
+	 * <ul>
+	 *     <li>[0] - The height of the obfuscated classes panel</li>
+	 *     <li>[1] - The width of the classes panel</li>
+	 *     <li>[2] - The width of the center panel</li>
+	 *     <li>[3] - The height of the tabs panel. Only used if the logs panel should appear</li>
+	 * </ul>
+	 *
+	 * @return an integer array composed of these 4 dimensions
+	 */
 	public static int[] getLayout() {
 		return swing.data().section("Main Window").getIntArray("Layout").orElseGet(() -> new int[] { -1, -1, -1, -1 });
 	}
@@ -58,12 +93,16 @@ public final class UiConfig {
 		return swing.data().section("Themes").setIfAbsentEnum(LookAndFeel::valueOf, "Current", LookAndFeel.NONE);
 	}
 
+	public static LookAndFeel getActiveLookAndFeel() {
+		return runningSwing.section("Themes").setIfAbsentEnum(LookAndFeel::valueOf, "Current", LookAndFeel.NONE);
+	}
+
 	public static void setLookAndFeel(LookAndFeel laf) {
 		swing.data().section("Themes").setEnum("Current", laf);
 	}
 
 	public static Decompiler getDecompiler() {
-		return ui.data().section("Decompiler").setIfAbsentEnum(Decompiler::valueOf, "Current", Decompiler.PROCYON);
+		return ui.data().section("Decompiler").setIfAbsentEnum(Decompiler::valueOf, "Current", Decompiler.CFR);
 	}
 
 	public static void setDecompiler(Decompiler d) {
@@ -76,12 +115,12 @@ public final class UiConfig {
 	}
 
 	private static Color getThemeColorRgba(String colorName) {
-		ConfigSection s = swing.data().section("Themes").section(getLookAndFeel().name()).section("Colors");
+		ConfigSection s = runningSwing.section("Themes").section(getActiveLookAndFeel().name()).section("Colors");
 		return fromComponents(s.getRgbColor(colorName).orElse(0), s.getDouble(String.format("%s Alpha", colorName)).orElse(0));
 	}
 
 	private static Color getThemeColorRgb(String colorName) {
-		ConfigSection s = swing.data().section("Themes").section(getLookAndFeel().name()).section("Colors");
+		ConfigSection s = runningSwing.section("Themes").section(getActiveLookAndFeel().name()).section("Colors");
 		return new Color(s.getRgbColor(colorName).orElse(0));
 	}
 
@@ -165,16 +204,25 @@ public final class UiConfig {
 		return getThemeColorRgb("Line Numbers Selected");
 	}
 
-	public static boolean shouldUseCustomFonts() {
-		return swing.data().section("Themes").section(getLookAndFeel().name()).section("Fonts").setIfAbsentBool("Use Custom", false);
+	public static boolean useCustomFonts() {
+		return swing.data().section("Themes").section(getActiveLookAndFeel().name()).section("Fonts").setIfAbsentBool("Use Custom", false);
+	}
+
+	public static boolean activeUseCustomFonts() {
+		return runningSwing.section("Themes").section(getActiveLookAndFeel().name()).section("Fonts").setIfAbsentBool("Use Custom", false);
 	}
 
 	public static void setUseCustomFonts(boolean b) {
-		swing.data().section("Themes").section(getLookAndFeel().name()).section("Fonts").setBool("Use Custom", b);
+		swing.data().section("Themes").section(getActiveLookAndFeel().name()).section("Fonts").setBool("Use Custom", b);
 	}
 
 	public static Optional<Font> getFont(String name) {
-		Optional<String> spec = swing.data().section("Themes").section(getLookAndFeel().name()).section("Fonts").getString(name);
+		Optional<String> spec = swing.data().section("Themes").section(getActiveLookAndFeel().name()).section("Fonts").getString(name);
+		return spec.map(Font::decode);
+	}
+
+	public static Optional<Font> getActiveFont(String name) {
+		Optional<String> spec = runningSwing.section("Themes").section(getActiveLookAndFeel().name()).section("Fonts").getString(name);
 		return spec.map(Font::decode);
 	}
 
@@ -183,7 +231,7 @@ public final class UiConfig {
 	}
 
 	public static Font getDefaultFont() {
-		return getFont("Default").orElseGet(() -> ScaleUtil.scaleFont(Font.decode(Font.DIALOG).deriveFont(Font.BOLD)));
+		return getActiveFont("Default").orElseGet(() -> ScaleUtil.scaleFont(Font.decode(Font.DIALOG).deriveFont(Font.BOLD)));
 	}
 
 	public static void setDefaultFont(Font font) {
@@ -191,7 +239,7 @@ public final class UiConfig {
 	}
 
 	public static Font getDefault2Font() {
-		return getFont("Default 2").orElseGet(() -> ScaleUtil.scaleFont(Font.decode(Font.DIALOG)));
+		return getActiveFont("Default 2").orElseGet(() -> ScaleUtil.scaleFont(Font.decode(Font.DIALOG)));
 	}
 
 	public static void setDefault2Font(Font font) {
@@ -199,7 +247,7 @@ public final class UiConfig {
 	}
 
 	public static Font getSmallFont() {
-		return getFont("Small").orElseGet(() -> ScaleUtil.scaleFont(Font.decode(Font.DIALOG)));
+		return getActiveFont("Small").orElseGet(() -> ScaleUtil.scaleFont(Font.decode(Font.DIALOG)));
 	}
 
 	public static void setSmallFont(Font font) {
@@ -207,11 +255,25 @@ public final class UiConfig {
 	}
 
 	public static Font getEditorFont() {
-		return getFont("Editor").orElseGet(() -> ScaleUtil.scaleFont(Font.decode(Font.MONOSPACED)));
+		return getActiveFont("Editor").orElseGet(UiConfig::getFallbackEditorFont);
 	}
 
 	public static void setEditorFont(Font font) {
 		setFont("Editor", font);
+	}
+
+	/**
+	 * Gets the fallback editor font.
+	 * It is used
+	 * <ul>
+	 * <li>when there is no custom editor font chosen</li>
+	 * <li>when custom fonts are disabled</li>
+	 * </ul>
+	 *
+	 * @return the fallback editor font
+	 */
+	public static Font getFallbackEditorFont() {
+		return ScaleUtil.scaleFont(Font.decode(Font.MONOSPACED));
 	}
 
 	public static String encodeFont(Font font) {
@@ -245,7 +307,15 @@ public final class UiConfig {
 		OptionalInt x = section.getInt(String.format("X %s", screenSize.width));
 		OptionalInt y = section.getInt(String.format("Y %s", screenSize.height));
 		if (x.isPresent() && y.isPresent()) {
-			return new Point(x.getAsInt(), y.getAsInt());
+			int ix = x.getAsInt();
+			int iy = y.getAsInt();
+
+			// Ensure that the position is on the screen.
+			if (ix < 0 || iy < 0 || ix > screenSize.width || iy > screenSize.height) {
+				return fallback;
+			}
+
+			return new Point(ix, iy);
 		} else {
 			return fallback;
 		}
@@ -264,6 +334,22 @@ public final class UiConfig {
 
 	public static void setLastSelectedDir(String directory) {
 		swing.data().section("File Dialog").setString("Selected", directory);
+	}
+
+	public static String getLastTopLevelPackage() {
+		return swing.data().section("Mapping Stats").getString("Top-Level Package").orElse("");
+	}
+
+	public static void setLastTopLevelPackage(String topLevelPackage) {
+		swing.data().section("Mapping Stats").setString("Top-Level Package", topLevelPackage);
+	}
+
+	public static boolean shouldIncludeSyntheticParameters() {
+		return swing.data().section("Mapping Stats").setIfAbsentBool("Synthetic Parameters", false);
+	}
+
+	public static void setIncludeSyntheticParameters(boolean b) {
+		swing.data().section("Mapping Stats").setBool("Synthetic Parameters", b);
 	}
 
 	public static void setLookAndFeelDefaults(LookAndFeel laf, boolean isDark) {

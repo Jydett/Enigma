@@ -13,6 +13,7 @@ package cuchaz.enigma.translation.representation.entry;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 
 import javax.annotation.Nullable;
 
@@ -21,7 +22,67 @@ import cuchaz.enigma.translation.mapping.IdentifierValidation;
 import cuchaz.enigma.utils.validation.ValidationContext;
 
 public interface Entry<P extends Entry<?>> extends Translatable {
+	/**
+	 * Returns the default name of this entry.
+	 *
+	 * <p>For methods, fields and inner classes, it's the same as {@link #getSimpleName()}.</p>
+	 * <p>For other classes, it's the same as {@link #getFullName()}.</p>
+	 *
+	 * <br><p>Examples:</p>
+	 * <ul>
+	 *     <li>Outer class: "domain.name.ClassA"</li>
+	 *     <li>Inner class: "ClassB"</li>
+	 *     <li>Method: "methodC"</li>
+	 * </ul>
+	 */
 	String getName();
+
+	/**
+	 * Returns the simple name of this entry.
+	 *
+	 * <p>For methods, fields and inner classes, it's the same as {@link #getName()}.</p>
+	 * <p>For other classes, it's their name without the package name.</p>
+	 *
+	 * <br><p>Examples:</p>
+	 * <ul>
+	 *     <li>Outer class: "ClassA"</li>
+	 *     <li>Inner class: "ClassB"</li>
+	 *     <li>Method: "methodC"</li>
+	 * </ul>
+	 */
+	String getSimpleName();
+
+	/**
+	 * Returns the full name of this entry.
+	 *
+	 * <p>For methods, fields and inner classes, it's their name prefixed with the full name
+	 * of their parent entry.</p>
+	 * <p>For other classes, it's their name prefixed with their package name.</p>
+	 *
+	 * <br><p>Examples:</p>
+	 * <ul>
+	 *     <li>Outer class: "domain.name.ClassA"</li>
+	 *     <li>Inner class: "domain.name.ClassA$ClassB"</li>
+	 *     <li>Method: "domain.name.ClassA.methodC"</li>
+	 * </ul>
+	 */
+	String getFullName();
+
+	/**
+	 * Returns the contextual name of this entry.
+	 *
+	 * <p>For methods, fields and inner classes, it's their name prefixed with the contextual
+	 * name of their parent entry.</p>
+	 * <p>For other classes, it's only their simple name.</p>
+	 *
+	 * <br><p>Examples:</p>
+	 * <ul>
+	 *     <li>Outer class: "ClassA"</li>
+	 *     <li>Inner class: "ClassA$ClassB"</li>
+	 *     <li>Method: "ClassA.methodC"</li>
+	 * </ul>
+	 */
+	String getContextualName();
 
 	String getJavadocs();
 
@@ -29,6 +90,13 @@ public interface Entry<P extends Entry<?>> extends Translatable {
 		return getName();
 	}
 
+	/**
+	 * Returns the parent entry of this entry.
+	 *
+	 * <p>The parent entry should be a {@linkplain MethodEntry method} for local variables,
+	 * a {@linkplain ClassEntry class} for methods, fields and inner classes, and {@code null}
+	 * for other classes.</p>
+	 */
 	@Nullable
 	P getParent();
 
@@ -40,16 +108,29 @@ public interface Entry<P extends Entry<?>> extends Translatable {
 
 	boolean canConflictWith(Entry<?> entry);
 
-	@Nullable
 	default ClassEntry getContainingClass() {
-		P parent = getParent();
-		if (parent == null) {
-			return null;
+		ClassEntry last = null;
+		Entry<?> current = this;
+		while (current != null) {
+			if (current instanceof ClassEntry) {
+				last = (ClassEntry) current;
+				break;
+			}
+			current = current.getParent();
 		}
-		if (parent instanceof ClassEntry) {
-			return (ClassEntry) parent;
+		return Objects.requireNonNull(last, () -> String.format("%s has no containing class?", this));
+	}
+
+	default ClassEntry getTopLevelClass() {
+		ClassEntry last = null;
+		Entry<?> current = this;
+		while (current != null) {
+			if (current instanceof ClassEntry) {
+				last = (ClassEntry) current;
+			}
+			current = current.getParent();
 		}
-		return parent.getContainingClass();
+		return Objects.requireNonNull(last, () -> String.format("%s has no top level class?", this));
 	}
 
 	default List<Entry<?>> getAncestry() {

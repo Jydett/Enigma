@@ -11,7 +11,6 @@ import javax.annotation.Nullable;
 import javax.swing.*;
 import javax.swing.text.BadLocationException;
 import javax.swing.text.Document;
-import javax.swing.text.Highlighter;
 import javax.swing.text.Highlighter.HighlightPainter;
 
 import de.sciss.syntaxpane.DefaultSyntaxKit;
@@ -22,12 +21,13 @@ import cuchaz.enigma.classhandle.ClassHandle;
 import cuchaz.enigma.classhandle.ClassHandleError;
 import cuchaz.enigma.events.ClassHandleListener;
 import cuchaz.enigma.gui.BrowserCaret;
+import cuchaz.enigma.gui.EditableType;
 import cuchaz.enigma.gui.Gui;
 import cuchaz.enigma.gui.GuiController;
 import cuchaz.enigma.gui.config.LookAndFeel;
 import cuchaz.enigma.gui.config.Themes;
 import cuchaz.enigma.gui.config.UiConfig;
-import cuchaz.enigma.gui.elements.PopupMenuBar;
+import cuchaz.enigma.gui.elements.EditorPopupMenu;
 import cuchaz.enigma.gui.events.EditorActionListener;
 import cuchaz.enigma.gui.events.ThemeChangeListener;
 import cuchaz.enigma.gui.highlight.BoxHighlightPainter;
@@ -42,8 +42,6 @@ import cuchaz.enigma.translation.mapping.EntryResolver;
 import cuchaz.enigma.translation.mapping.ResolutionStrategy;
 import cuchaz.enigma.translation.representation.entry.ClassEntry;
 import cuchaz.enigma.translation.representation.entry.Entry;
-import cuchaz.enigma.translation.representation.entry.FieldEntry;
-import cuchaz.enigma.translation.representation.entry.MethodEntry;
 import cuchaz.enigma.utils.I18n;
 import cuchaz.enigma.utils.Result;
 
@@ -52,7 +50,7 @@ public class EditorPanel {
 	private final JPanel ui = new JPanel();
 	private final JEditorPane editor = new JEditorPane();
 	private final JScrollPane editorScrollPane = new JScrollPane(this.editor);
-	private final PopupMenuBar popupMenu;
+	private final EditorPopupMenu popupMenu;
 
 	// progress UI
 	private final JLabel decompilingLabel = new JLabel(I18n.translate("editor.decompiling"), JLabel.CENTER);
@@ -101,9 +99,13 @@ public class EditorPanel {
 		DefaultSyntaxKit kit = (DefaultSyntaxKit) this.editor.getEditorKit();
 		kit.toggleComponent(this.editor, "de.sciss.syntaxpane.components.TokenMarker");
 
+		// set unit increment to height of one line, the amount scrolled per
+		// mouse wheel rotation is then controlled by OS settings
+		this.editorScrollPane.getVerticalScrollBar().setUnitIncrement(this.editor.getFontMetrics(this.editor.getFont()).getHeight());
+
 		// init editor popup menu
-		this.popupMenu = new PopupMenuBar(this, gui);
-		this.editor.setComponentPopupMenu(this.popupMenu);
+		this.popupMenu = new EditorPopupMenu(this, gui);
+		this.editor.setComponentPopupMenu(this.popupMenu.getUi());
 
 		this.decompilingLabel.setFont(ScaleUtil.getFont(this.decompilingLabel.getFont().getFontName(), Font.BOLD, 26));
 		this.decompilingProgressBar.setIndeterminate(true);
@@ -141,50 +143,11 @@ public class EditorPanel {
 			public void keyPressed(KeyEvent event) {
 				if (event.isControlDown()) {
 					EditorPanel.this.shouldNavigateOnClick = false;
+					if (EditorPanel.this.popupMenu.handleKeyEvent(event)) return;
 					switch (event.getKeyCode()) {
-						case KeyEvent.VK_I:
-							EditorPanel.this.popupMenu.showInheritanceMenu.doClick();
-							break;
-
-						case KeyEvent.VK_M:
-							EditorPanel.this.popupMenu.showImplementationsMenu.doClick();
-							break;
-
-						case KeyEvent.VK_N:
-							EditorPanel.this.popupMenu.openEntryMenu.doClick();
-							break;
-
-						case KeyEvent.VK_P:
-							EditorPanel.this.popupMenu.openPreviousMenu.doClick();
-							break;
-
-						case KeyEvent.VK_E:
-							EditorPanel.this.popupMenu.openNextMenu.doClick();
-							break;
-
-						case KeyEvent.VK_C:
-							if (event.isShiftDown()) {
-								EditorPanel.this.popupMenu.showCallsSpecificMenu.doClick();
-							} else {
-								EditorPanel.this.popupMenu.showCallsMenu.doClick();
-							}
-							break;
-
-						case KeyEvent.VK_O:
-							EditorPanel.this.popupMenu.toggleMappingMenu.doClick();
-							break;
-
-						case KeyEvent.VK_R:
-							EditorPanel.this.popupMenu.renameMenu.doClick();
-							break;
-
-						case KeyEvent.VK_D:
-							EditorPanel.this.popupMenu.editJavadocMenu.doClick();
-							break;
-
 						case KeyEvent.VK_F5:
 							if (EditorPanel.this.classHandle != null) {
-								EditorPanel.this.classHandle.invalidateMapped();
+								EditorPanel.this.classHandle.invalidate();
 							}
 							break;
 
@@ -211,7 +174,9 @@ public class EditorPanel {
 
 			@Override
 			public void keyTyped(KeyEvent event) {
-				if (!EditorPanel.this.popupMenu.renameMenu.isEnabled()) return;
+				EntryReference<Entry<?>, Entry<?>> ref = EditorPanel.this.getCursorReference();
+				if (ref == null) return;
+				if (!EditorPanel.this.controller.project.isRenamable(ref)) return;
 
 				if (!event.isControlDown() && !event.isAltDown() && Character.isJavaIdentifierPart(event.getKeyChar())) {
 					EnigmaProject project = gui.getController().project;
@@ -340,17 +305,10 @@ public class EditorPanel {
 
 	public void displayError(ClassHandleError t) {
 		this.setDisplayMode(DisplayMode.ERRORED);
-		String str;
-		switch (t.type) {
-			case DECOMPILE:
-				str = "editor.decompile_error";
-				break;
-			case REMAP:
-				str = "editor.remap_error";
-				break;
-			default:
-				throw new IllegalStateException("unreachable");
-		}
+		String str = switch (t.type) {
+			case DECOMPILE -> "editor.decompile_error";
+			case REMAP -> "editor.remap_error";
+		};
 		this.errorLabel.setText(I18n.translate(str));
 		this.errorTextArea.setText(t.getStackTrace());
 		this.errorTextArea.setCaretPosition(0);
@@ -431,30 +389,7 @@ public class EditorPanel {
 	private void setCursorReference(EntryReference<Entry<?>, Entry<?>> ref) {
 		this.cursorReference = ref;
 
-		Entry<?> referenceEntry = ref == null ? null : ref.entry;
-
-		boolean isClassEntry = referenceEntry instanceof ClassEntry;
-		boolean isFieldEntry = referenceEntry instanceof FieldEntry;
-		boolean isMethodEntry = referenceEntry instanceof MethodEntry && !((MethodEntry) referenceEntry).isConstructor();
-		boolean isConstructorEntry = referenceEntry instanceof MethodEntry && ((MethodEntry) referenceEntry).isConstructor();
-		boolean isRenamable = ref != null && this.controller.project.isRenamable(ref);
-
-		this.popupMenu.renameMenu.setEnabled(isRenamable);
-		this.popupMenu.editJavadocMenu.setEnabled(isRenamable);
-		this.popupMenu.showInheritanceMenu.setEnabled(isClassEntry || isMethodEntry || isConstructorEntry);
-		this.popupMenu.showImplementationsMenu.setEnabled(isClassEntry || isMethodEntry);
-		this.popupMenu.showCallsMenu.setEnabled(isClassEntry || isFieldEntry || isMethodEntry || isConstructorEntry);
-		this.popupMenu.showCallsSpecificMenu.setEnabled(isMethodEntry);
-		this.popupMenu.openEntryMenu.setEnabled(isRenamable && (isClassEntry || isFieldEntry || isMethodEntry || isConstructorEntry));
-		this.popupMenu.openPreviousMenu.setEnabled(this.controller.hasPreviousReference());
-		this.popupMenu.openNextMenu.setEnabled(this.controller.hasNextReference());
-		this.popupMenu.toggleMappingMenu.setEnabled(isRenamable);
-
-		if (referenceEntry != null && this.controller.project.getMapper().extendedDeobfuscate(referenceEntry).isDeobfuscated()) {
-			this.popupMenu.toggleMappingMenu.setText(I18n.translate("popup_menu.reset_obfuscated"));
-		} else {
-			this.popupMenu.toggleMappingMenu.setText(I18n.translate("popup_menu.mark_deobfuscated"));
-		}
+		this.popupMenu.updateUiState();
 
 		this.listeners.forEach(l -> l.onCursorReferenceChanged(this, ref));
 	}
@@ -526,10 +461,26 @@ public class EditorPanel {
 		this.editor.getHighlighter().removeAllHighlights();
 
 		if (this.boxHighlightPainters != null) {
+			BoxHighlightPainter proposedPainter = this.boxHighlightPainters.get(RenamableTokenType.PROPOSED);
+
 			for (RenamableTokenType type : tokens.keySet()) {
 				BoxHighlightPainter painter = this.boxHighlightPainters.get(type);
+
 				if (painter != null) {
-					setHighlightedTokens(tokens.get(type), painter);
+					for (Token token : tokens.get(type)) {
+						EntryReference<Entry<?>, Entry<?>> reference = this.getReference(token);
+						BoxHighlightPainter tokenPainter;
+
+						if (reference != null) {
+							EditableType t = EditableType.fromEntry(reference.entry);
+							boolean editable = t == null || this.gui.isEditable(t);
+							tokenPainter = editable ? painter : proposedPainter;
+						} else {
+							tokenPainter = painter;
+						}
+
+						this.addHighlightedToken(token, tokenPainter);
+					}
 				}
 			}
 		}
@@ -538,13 +489,11 @@ public class EditorPanel {
 		this.editor.repaint();
 	}
 
-	private void setHighlightedTokens(Iterable<Token> tokens, Highlighter.HighlightPainter painter) {
-		for (Token token : tokens) {
-			try {
-				this.editor.getHighlighter().addHighlight(token.start, token.end, painter);
-			} catch (BadLocationException ex) {
-				throw new IllegalArgumentException(ex);
-			}
+	private void addHighlightedToken(Token token, HighlightPainter tokenPainter) {
+		try {
+			this.editor.getHighlighter().addHighlight(token.start, token.end, tokenPainter);
+		} catch (BadLocationException ex) {
+			throw new IllegalArgumentException(ex);
 		}
 	}
 
@@ -569,7 +518,7 @@ public class EditorPanel {
 		if (this.source == null) return;
 		if (reference == null) return;
 
-		Collection<Token> tokens = this.controller.getTokensForReference(this.source, reference);
+		List<Token> tokens = this.controller.getTokensForReference(this.source, reference);
 		if (tokens.isEmpty()) {
 			// DEBUG
 			System.err.println(String.format("WARNING: no tokens found for %s in %s", reference, this.classHandle.getRef()));
@@ -664,6 +613,10 @@ public class EditorPanel {
 	public String getFileName() {
 		ClassEntry classEntry = this.classHandle.getDeobfRef() != null ? this.classHandle.getDeobfRef() : this.classHandle.getRef();
 		return classEntry.getSimpleName();
+	}
+
+	public void retranslateUi() {
+		this.popupMenu.retranslateUi();
 	}
 
 	private enum DisplayMode {

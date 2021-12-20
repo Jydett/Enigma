@@ -59,21 +59,39 @@ public class ClassEntry extends ParentedEntry<ClassEntry> implements Comparable<
 		return this.name;
 	}
 
-	public String getFullName() {
-		return fullName;
+	@Override
+	public String getSimpleName() {
+		int packagePos = name.lastIndexOf('/');
+		if (packagePos > 0) {
+			return name.substring(packagePos + 1);
+		}
+		return name;
 	}
 
 	@Override
-	public TranslateResult<? extends ClassEntry> extendedTranslate(Translator translator, @Nullable EntryMapping mapping) {
+	public String getFullName() {
+		return this.fullName;
+	}
+
+	@Override
+	public String getContextualName() {
+		if (this.isInnerClass()) {
+			return this.parent.getSimpleName() + "$" + this.name;
+		}
+		return this.getSimpleName();
+	}
+
+	@Override
+	public TranslateResult<? extends ClassEntry> extendedTranslate(Translator translator, @Nonnull EntryMapping mapping) {
 		if (name.charAt(0) == '[') {
 			TranslateResult<TypeDescriptor> translatedName = translator.extendedTranslate(new TypeDescriptor(name));
 			return translatedName.map(desc -> new ClassEntry(parent, desc.toString()));
 		}
 
-		String translatedName = mapping != null ? mapping.getTargetName() : name;
-		String docs = mapping != null ? mapping.getJavadoc() : null;
+		String translatedName = mapping.targetName() != null ? mapping.targetName() : name;
+		String docs = mapping.javadoc();
 		return TranslateResult.of(
-				mapping == null ? RenamableTokenType.OBFUSCATED : RenamableTokenType.DEOBFUSCATED,
+				mapping.targetName() == null ? RenamableTokenType.OBFUSCATED : RenamableTokenType.DEOBFUSCATED,
 				new ClassEntry(parent, translatedName, docs)
 		);
 	}
@@ -126,14 +144,9 @@ public class ClassEntry extends ParentedEntry<ClassEntry> implements Comparable<
 		return getPackageName(fullName);
 	}
 
-	public String getSimpleName() {
-		int packagePos = name.lastIndexOf('/');
-		if (packagePos > 0) {
-			return name.substring(packagePos + 1);
-		}
-		return name;
-	}
-
+	/**
+	 * Returns whether this class entry has a parent, and therefore is an inner class.
+	 */
 	public boolean isInnerClass() {
 		return parent != null;
 	}
@@ -171,7 +184,7 @@ public class ClassEntry extends ParentedEntry<ClassEntry> implements Comparable<
 
 	public boolean isJre() {
 		String packageName = getPackageName();
-		return packageName != null && (packageName.startsWith("java") || packageName.startsWith("javax"));
+		return packageName != null && (packageName.startsWith("java/") || packageName.startsWith("javax/"));
 	}
 
 	public static String getPackageName(String name) {

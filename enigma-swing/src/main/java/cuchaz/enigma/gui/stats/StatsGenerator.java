@@ -3,8 +3,6 @@ package cuchaz.enigma.gui.stats;
 import cuchaz.enigma.EnigmaProject;
 import cuchaz.enigma.ProgressListener;
 import cuchaz.enigma.analysis.index.EntryIndex;
-import cuchaz.enigma.api.service.NameProposalService;
-import cuchaz.enigma.api.service.ObfuscationTestService;
 import cuchaz.enigma.translation.mapping.EntryRemapper;
 import cuchaz.enigma.translation.mapping.EntryResolver;
 import cuchaz.enigma.translation.mapping.ResolutionStrategy;
@@ -15,21 +13,19 @@ import cuchaz.enigma.utils.I18n;
 import java.util.*;
 
 public class StatsGenerator {
+    private final EnigmaProject project;
     private final EntryIndex entryIndex;
     private final EntryRemapper mapper;
     private final EntryResolver entryResolver;
-    private final List<ObfuscationTestService> obfuscationTestServices;
-    private final List<NameProposalService> nameProposalServices;
 
     public StatsGenerator(EnigmaProject project) {
-        entryIndex = project.getJarIndex().getEntryIndex();
-        mapper = project.getMapper();
-        entryResolver = project.getJarIndex().getEntryResolver();
-        obfuscationTestServices = project.getEnigma().getServices().get(ObfuscationTestService.TYPE);
-        nameProposalServices = project.getEnigma().getServices().get(NameProposalService.TYPE);
+        this.project = project;
+        this.entryIndex = project.getJarIndex().getEntryIndex();
+        this.mapper = project.getMapper();
+        this.entryResolver = project.getJarIndex().getEntryResolver();
     }
 
-    public StatsResult generate(ProgressListener progress, Set<StatsMember> includedMembers, String topLevelPackage) {
+    public StatsResult generate(ProgressListener progress, Set<StatsMember> includedMembers, String topLevelPackage, boolean includeSynthetic) {
         includedMembers = EnumSet.copyOf(includedMembers);
         int totalWork = 0;
         int totalMappable = 0;
@@ -60,13 +56,13 @@ public class StatsGenerator {
                         .findFirst()
                         .orElseThrow(AssertionError::new);
 
-                if (root == method && !((MethodDefEntry) method).getAccess().isSynthetic()) {
-                    if (includedMembers.contains(StatsMember.METHODS)) {
+                if (root == method) {
+                    if (includedMembers.contains(StatsMember.METHODS) && !((MethodDefEntry) method).getAccess().isSynthetic()) {
                         update(counts, method);
                         totalMappable ++;
                     }
 
-                    if (includedMembers.contains(StatsMember.PARAMETERS)) {
+                    if (includedMembers.contains(StatsMember.PARAMETERS) && (!((MethodDefEntry) method).getAccess().isSynthetic() || includeSynthetic)) {
                         int index = ((MethodDefEntry) method).getAccess().isStatic() ? 0 : 1;
                         for (TypeDescriptor argument : method.getDesc().getArgumentDescs()) {
                             update(counts, new LocalVariableEntry(method, index, "", true,null));
@@ -111,36 +107,9 @@ public class StatsGenerator {
     }
 
     private void update(Map<String, Integer> counts, Entry<?> entry) {
-        if (isObfuscated(entry)) {
+        if (project.isObfuscated(entry)) {
             String parent = mapper.deobfuscate(entry.getAncestry().get(0)).getName().replace('/', '.');
             counts.put(parent, counts.getOrDefault(parent, 0) + 1);
         }
-    }
-
-    private boolean isObfuscated(Entry<?> entry) {
-        String name = entry.getName();
-
-        if (!obfuscationTestServices.isEmpty()) {
-            for (ObfuscationTestService service : obfuscationTestServices) {
-                if (service.testDeobfuscated(entry)) {
-                    return false;
-                }
-            }
-        }
-
-        if (!nameProposalServices.isEmpty()) {
-            for (NameProposalService service : nameProposalServices) {
-                if (service.proposeName(entry, mapper).isPresent()) {
-                    return false;
-                }
-            }
-        }
-
-        String mappedName = mapper.deobfuscate(entry).getName();
-        if (mappedName != null && !mappedName.isEmpty() && !mappedName.equals(name)) {
-            return false;
-        }
-
-        return true;
     }
 }

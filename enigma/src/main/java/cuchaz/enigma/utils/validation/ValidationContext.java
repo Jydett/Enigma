@@ -41,11 +41,13 @@ public class ValidationContext {
 	 * @param args    the arguments used when formatting the message text
 	 */
 	public void raise(Message message, Object... args) {
-		ParameterizedMessage pm = new ParameterizedMessage(message, args);
-		if (activeElement != null) {
-			activeElement.addMessage(pm);
+		ParameterizedMessage pm = new ParameterizedMessage(message, args, this.activeElement);
+		if (!this.messages.contains(pm)) {
+			if (activeElement != null) {
+				activeElement.addMessage(pm);
+			}
+			messages.add(pm);
 		}
-		messages.add(pm);
 	}
 
 	/**
@@ -58,6 +60,20 @@ public class ValidationContext {
 	public boolean canProceed() {
 		// TODO on warnings, wait until user confirms
 		return messages.stream().noneMatch(m -> m.message.type == Type.ERROR);
+	}
+
+	/**
+	 * If this validation context has at least one error, throw an exception.
+	 *
+	 * @throws IllegalStateException if errors are present
+	 */
+	public void throwOnError() {
+		if (!this.canProceed()) {
+			for (ParameterizedMessage message : this.messages) {
+				PrintValidatable.formatMessage(System.err, message);
+			}
+			throw new IllegalStateException("Errors encountered; cannot continue! Check error log for details.");
+		}
 	}
 
 	public List<ParameterizedMessage> getMessages() {
