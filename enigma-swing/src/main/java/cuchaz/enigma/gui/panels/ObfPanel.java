@@ -1,6 +1,7 @@
 package cuchaz.enigma.gui.panels;
 
 import java.awt.BorderLayout;
+import java.awt.Component;
 import java.util.Comparator;
 
 import javax.swing.JLabel;
@@ -31,13 +32,14 @@ public class ObfPanel extends JPanel {
 			return aname.compareTo(bname);
 		};
 
-		this.obfClasses = new ClassSelector(gui, obfClassComparator, false);
+		this.obfClasses = new ClassSelector(gui, obfClassComparator, false, true);
 		this.obfClasses.setSelectionListener(gui.getController()::navigateTo);
 		this.obfClasses.setRenameSelectionListener(gui::onRenameFromClassTree);
 
 		this.setLayout(new BorderLayout());
 		this.add(this.title, BorderLayout.NORTH);
 		this.add(new JScrollPane(this.obfClasses), BorderLayout.CENTER);
+		this.add(this.obfClasses.getFilterField(), BorderLayout.SOUTH);
 
 		this.retranslateUi();
 	}

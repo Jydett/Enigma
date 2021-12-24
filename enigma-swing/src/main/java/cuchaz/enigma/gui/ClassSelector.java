@@ -15,8 +15,10 @@ import java.awt.Component;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.util.*;
+import java.util.function.BiPredicate;
 
 import javax.annotation.Nullable;
+import javax.swing.JTextField;
 import javax.swing.JTree;
 import javax.swing.event.CellEditorListener;
 import javax.swing.event.ChangeEvent;
@@ -28,6 +30,7 @@ import com.google.common.collect.Maps;
 import com.google.common.collect.Multimap;
 import cuchaz.enigma.gui.node.ClassSelectorClassNode;
 import cuchaz.enigma.gui.node.ClassSelectorPackageNode;
+import cuchaz.enigma.gui.panels.TreeFilterDecorator;
 import cuchaz.enigma.gui.util.GuiUtil;
 import cuchaz.enigma.translation.Translator;
 import cuchaz.enigma.translation.representation.entry.ClassEntry;
@@ -43,13 +46,18 @@ public class ClassSelector extends JTree {
 	private ClassSelectionListener selectionListener;
 	private RenameSelectionListener renameSelectionListener;
 	private Comparator<ClassEntry> comparator;
-
+	private final JTextField filterField;
 	private final Map<ClassEntry, ClassEntry> displayedObfToDeobf = new HashMap<>();
+	private boolean decorated = false;
 
-	public ClassSelector(Gui gui, Comparator<ClassEntry> comparator, boolean isRenamable) {
+	public ClassSelector(Gui gui, Comparator<ClassEntry> comparator, boolean isRenamable, boolean hasFilter) {
 		this.comparator = comparator;
 		this.controller = gui.getController();
-
+		if (hasFilter) {
+			this.filterField = new JTextField(15);
+		} else {
+			this.filterField = null;
+		}
 		// configure the tree control
 		setEditable(true);
 		setRootVisible(false);
@@ -240,10 +248,26 @@ public class ClassSelector extends JTree {
 			}
 		}
 
+
 		// finally, update the tree control
 		setModel(new DefaultTreeModel(rootNodes));
 
 		restoreExpansionState(this, state);
+
+		if (! this.decorated && this.filterField != null) {
+			this.decorated = true;
+			TreeFilterDecorator.decorate(this, this.createUserObjectMatcher(), this.filterField);
+		}
+	}
+
+	private BiPredicate<Object, String> createUserObjectMatcher() {
+		return (userObject, textToFilter) -> {
+			if (userObject instanceof ClassEntry pp) {
+				String name = pp.getName();
+				return name.substring(name.lastIndexOf("/") + 1).equals(textToFilter);
+			}
+			return false;
+		};
 	}
 
 	public ClassEntry getSelectedClass() {
@@ -544,4 +568,9 @@ public class ClassSelector extends JTree {
 	public interface RenameSelectionListener {
 		void onSelectionRename(ValidationContext vc, Object prevData, Object data, DefaultMutableTreeNode node);
 	}
+
+	public JTextField getFilterField() {
+		return filterField;
+	}
+
 }

@@ -120,6 +120,7 @@ public class GuiUtil {
     }
 
     public static Icon getClassIcon(Gui gui, ClassEntry entry) {
+        if (gui.getController().project == null) return CLASS_ICON;
         EntryIndex entryIndex = gui.getController().project.getJarIndex().getEntryIndex();
         AccessFlags access = entryIndex.getClassAccess(entry);
 
